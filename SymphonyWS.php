@@ -165,7 +165,6 @@ class SymphonyWS implements DriverInterface
 	    }
 
 	    if($parentID){
-		//$result = $this->WS->lookupTitleInfo($parentID);
 		$options = array("titleID" => $parentID,
 				 "includeAvailabilityInfo" => "true",
 				 "includeItemInfo" => "true",
@@ -292,7 +291,6 @@ class SymphonyWS implements DriverInterface
 
 	    if(isset($login->sessionToken))
 	    {
-	      //$account = $this->WS->lookupMyAccountInfo();
 	      $account = $this->patronService->lookupMyAccountInfo(array("includePatronInfo" => "ALL",
 																	  "includePatronCirculationInfo" => "ALL",
 																	  "includePatronCheckoutInfo" => "ALL", 
@@ -407,7 +405,6 @@ class SymphonyWS implements DriverInterface
 
 	foreach($cancelDetails['details'] as $holdKey)
 	{
-	  //$hold = $this->WS->cancelMyHold($holdKey);
 	  $hold = $this->patronService->cancelMyHold(array("holdKey" => "$holdKey"));
 	  
 	  if($hold == 1) // true or 1?
@@ -430,7 +427,6 @@ class SymphonyWS implements DriverInterface
 
     public function getMyHolds($patron)
     {
-	//$result = $this->WS->listMyHolds();
 	$result = $this->patronService->lookupMyAccountInfo(array("includePatronHoldInfo" => "ACTIVE"));
 
 	if(!property_exists($result, "patronHoldInfo"))
@@ -465,7 +461,6 @@ class SymphonyWS implements DriverInterface
     public function getMyFines($patron)
     {
 	try {
-	  //$result = $this->WS->lookupMyAccountInfo();
 	  $result = $this->patronService->lookupMyAccountInfo(array("includePatronInfo" => "ALL",
 																	  "includePatronCirculationInfo" => "ALL",
 																	  "includePatronCheckoutInfo" => "ALL", 
@@ -500,7 +495,6 @@ class SymphonyWS implements DriverInterface
     public function getMyProfile($patron)
     {
 	try {
-	  //$result = $this->WS->lookupMyAccountInfo();
          $result = $this->patronService->lookupMyAccountInfo(array("includePatronInfo" => "ALL",
 																	  "includePatronCirculationInfo" => "ALL",
 																	  "includePatronCheckoutInfo" => "ALL", 
@@ -533,7 +527,6 @@ class SymphonyWS implements DriverInterface
     public function getMyTransactions($patron)
     {
 	try {
-	//$result = $this->WS->lookupMyAccountInfo();
 	$result = $this->patronService->lookupMyAccountInfo(array("includePatronInfo" => "ALL",
 																	  "includePatronCirculationInfo" => "ALL",
 																	  "includePatronCheckoutInfo" => "ALL", 
@@ -590,7 +583,6 @@ class SymphonyWS implements DriverInterface
 
 	foreach($renewDetails['details'] as $barcode)
 	{
-	  //$renewal = $this->WS->renewMyCheckout($barcode);
 	  $result = $this->patronService->renewMyCheckout(array("itemID" => $barcode));
 
 	  if(isset($renewal->message))
@@ -621,7 +613,6 @@ class SymphonyWS implements DriverInterface
    
    public function renewItem($patron_id, $specific_item) 
    {
-	//return $this->WS->renewCheckout($patron_id, $specific_item);
         return $this->patronService->renewCheckout(
 			array("itemID" => $specific_item, 
 			      "userID" => $patron_id)
@@ -646,8 +637,6 @@ class SymphonyWS implements DriverInterface
 	  if($holdDetails['requiredBy'] != null)
 	    $options["expiresDate"] = $holdDetails['requiredBy'];
 
-	  //print_r($options);
-	  //$hold = $this->WS->createMyHold($options);
 	  $hold = $this->patronService->createMyHold($options);
 	  if (PEAR::isError($hold)) {
 	    PEAR::raiseError(new PEAR_Error('Cannot Process Place Hold - ' . $hold));
