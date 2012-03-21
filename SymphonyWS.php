@@ -13,8 +13,7 @@ require_once 'Interface.php';
 
 class SymphonyWS implements DriverInterface
 {
-    private $config;	
-    private $WS;
+    private $config;
     private $session;
 
     private $STANDARD_WSDL = "soap/standard?wsdl";
@@ -207,7 +206,6 @@ class SymphonyWS implements DriverInterface
 			    $dueDate = date("F j, Y", strtotime($ItemInfo->dueDate));
 			else
 		    	    $dueDate = null;
-			//print_r($ItemInfo);
 
 			if(!isset($callNumberFilter) || ($CallInfo->callNumber == $callNumberFilter) || ($parentID == $id))
 			{
@@ -240,7 +238,6 @@ class SymphonyWS implements DriverInterface
 		    }
 	        }
 	    }
-            //print_r($holdingList);
 	    return $holdingList;	   
 	} catch (PDOException $e) {
             return new PEAR_Error($e->getMessage());
@@ -407,7 +404,7 @@ class SymphonyWS implements DriverInterface
 	{
 	  $hold = $this->patronService->cancelMyHold(array("holdKey" => "$holdKey"));
 	  
-	  if($hold == 1) // true or 1?
+	  if($hold == 1)
 	  {
             $count++;
             $items[$holdKey] = array(
@@ -436,7 +433,7 @@ class SymphonyWS implements DriverInterface
 
 	if(!is_array($holds))
    	  $holds  = array($holds);
-	//print_r($holds);
+
 	foreach($holds as $hold){
 	  $holdList[] = array('id' => $hold->titleKey,
 			      //'type' => ,
@@ -536,7 +533,6 @@ class SymphonyWS implements DriverInterface
 																	  "includePatronStatusInfo" => "ALL"));
 
 	$transactions = $result->patronCheckoutInfo;
-	//print_r($transactions);
 	
 	if(empty($transactions))
 	  return null;
