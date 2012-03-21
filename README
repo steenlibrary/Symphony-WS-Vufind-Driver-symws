@@ -3,4 +3,11 @@ Symphony WS Vufind Driver
 This driver was designed for Vufind 1.2 and above, although it should work with 1.1.  
 Feel free to fork!
 
-Contact me at: mlgillen at sfasu dot edu
+Instructions:
+Copy "SymphonyWS.php" into "vufind/web/Drivers/".
+Edit "SymphonyWS.ini" and save into "vufind/web/conf/".
+Edit your "web/conf/config.ini" and change the "[Catalog] driver" setting to "SymphonyWS".
+
+For patron authentication through this driver, you will also need to change the "[Authentication] method" setting in "web/conf/config.ini" to "ILS".
+
+Feel free to contact me at: mlgillen at sfasu dot edu
