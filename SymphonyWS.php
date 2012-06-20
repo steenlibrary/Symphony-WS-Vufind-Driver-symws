@@ -106,9 +106,6 @@ class SymphonyWS implements DriverInterface
                 .$this->ADMIN_WSDL, $options);
             $this->adminService->__setSoapHeaders($header);
 
-            $this->reserveService = @new SoapClient($this->BASE_URL
-                .$this->RESERVE_WSDL, $options);
-            $this->reserveService->__setSoapHeaders($header);
         } catch (SoapFault $e) {
             throw $e;
         } catch (Exception $e) {
@@ -1027,6 +1024,10 @@ class SymphonyWS implements DriverInterface
         $items = array();
 
         try {
+            $this->reserveService = @new SoapClient($this->BASE_URL
+                .$this->RESERVE_WSDL, $options);
+            $this->reserveService->__setSoapHeaders($header);
+
             // $reserves = $this->reserveService->browseReserve($params);
             //$reserves = $this->reserveService->listReservePaging($params);
             $reserves = $this->reserveService->lookupReserve($params);
@@ -1066,6 +1067,10 @@ class SymphonyWS implements DriverInterface
     public function getInstructors()
     {
         try {
+            $this->reserveService = @new SoapClient($this->BASE_URL
+                .$this->RESERVE_WSDL, $options);
+            $this->reserveService->__setSoapHeaders($header);
+
             $users = array();
 
             $reserveOptions = array("browseType" => "USER_NAME");
@@ -1096,6 +1101,10 @@ class SymphonyWS implements DriverInterface
     public function getCourses()
     {
         try {
+            $this->reserveService = @new SoapClient($this->BASE_URL
+                .$this->RESERVE_WSDL, $options);
+            $this->reserveService->__setSoapHeaders($header);
+
             $courses = array();
 
             $reserveOptions = array("browseType" => "COURSE_NAME");
@@ -1124,6 +1133,10 @@ class SymphonyWS implements DriverInterface
     public function getDepartments()
     {
         try {
+            $this->reserveService = @new SoapClient($this->BASE_URL
+                .$this->RESERVE_WSDL, $options);
+            $this->reserveService->__setSoapHeaders($header);
+
             $depts = array();
 
             $reserveOptions = array("browseType" => "COURSE_NAME");
