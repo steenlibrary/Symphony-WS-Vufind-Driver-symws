@@ -1,11 +1,22 @@
 Symphony WS Vufind Driver
 ------------------
 This driver was designed for Vufind 1.2 and above, although it should work with 1.1.  
+
+UPDATE (06/20/2012): 
+	1. Supports new features in 1.4
+	2. getMyFines fixed to show individual fines instead of only fine total.
+	3. getMyFines fee type configurable from SymphonyWS.ini.
+	4. Still experimenting with the reserves functionality.  The reserves service in symws is buggy and not well suited for ingestion into Vufind, but I will keep trying!
+	5. Showing staff notes in holdings is configurable from SymphonyWS.ini.
+	6. Showing account log in is configurable from SymphonyWS.ini.
+	7. Showing base call number in search hit list is configurable in SymphonyWS.ini.
+		
+
 Feel free to fork!
 
-Instructions:
+INSTRUCTIONS:
 Copy "SymphonyWS.php" into "vufind/web/Drivers/".
-Edit "SymphonyWS.ini" and save into "vufind/web/conf/".
+Edit "SymphonyWS.ini" to fit your local environment and save into "vufind/web/conf/".
 Edit your "web/conf/config.ini" and change the "[Catalog] driver" setting to "SymphonyWS".
 
 For patron authentication through this driver, you will also need to change the "[Authentication] method" setting in "web/conf/config.ini" to "ILS".

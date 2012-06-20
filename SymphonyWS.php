@@ -90,7 +90,7 @@ class SymphonyWS implements DriverInterface
         try {
             $headerbody = array("clientID" => $this->clientID);     
 
-            $options = array("sessionToken" => $this->sessionToken);
+            $options = array("sessionToken" => $this->sessionToken, "trace" => "1");
   
             $header = new SoapHeader($this->WS_HEADER, "SdHeader", $headerbody);
  
@@ -107,12 +107,12 @@ class SymphonyWS implements DriverInterface
             $this->adminService->__setSoapHeaders($header);
 
             $this->reserveService = @new SoapClient($this->BASE_URL
-                .$this->RESERVE_WSDL, $options);           
+                .$this->RESERVE_WSDL, $options);
             $this->reserveService->__setSoapHeaders($header);
         } catch (SoapFault $e) {
-            return $e;
+            throw $e;
         } catch (Exception $e) {
-            return $e;
+            throw $e;
         }
     }
 
@@ -725,34 +725,38 @@ class SymphonyWS implements DriverInterface
         try {
             $fineList = array();
 
-            $options = array("includePatronInfo" => "ALL",
-                             "includePatronCirculationInfo" => "ALL",
-                             "includePatronCheckoutInfo" => "ALL",
-                             //"includePatronHoldInfo" => "ACTIVE",
-                             //"includePatronAddressInfo" => "ACTIVE",
-                             "includeFeeInfo" => "ACTIVE",
-                             "includePatronStatusInfo" => "ALL");
+            $feeType = $this->config['Behaviors']['showFeeType'];
+
+            $options = array("includeFeeInfo" => $feeType);
 
             $result = $this->patronService->lookupMyAccountInfo($options);
-            
-            $fines = $result->patronCirculationInfo;
 
-            if ($fines->numberOfFees > 0) {
-                $estimatedFines = $fines->estimatedFines->_;
+            if (isset($result->feeInfo)) {
+                $feeInfo = $result->feeInfo;
 
-                $fineList[] = array('id' => 0,
-                                    'amount' => $estimatedFines*100,
-                                    //'checkout' => ,
-                                    'fine' => "General Fine",
-                                    'balance' => $estimatedFines*100,
-                                    //'createdate' => $checkout,
-                                    //'duedate' => $duedate
-                                   );
-                return $fineList;
-            } else {
-                return null;
+                foreach ($feeInfo as $fee) {
+                    $fineList[] = array('amount' => $fee->amount->_ * 100,
+                                        'checkout' => 
+                                            isset($fee->feeItemInfo->checkoutDate) ? 
+                                            $fee->feeItemInfo->checkoutDate : null,
+                                        'fine' => $fee->billReasonDescription,
+                                        'balance' => $fee->amountOutstanding->_ 
+                                            * 100,
+                                        'createdate' => 
+                                            isset($fee->feeItemInfo->dateBilled) ? 
+                                            $fee->feeItemInfo->dateBilled : null,
+                                        'duedate' => 
+                                            isset($fee->feeItemInfo->dueDate) ? 
+                                            $fee->feeItemInfo->dueDate : null,
+                                        'id' => isset($fee->feeItemInfo->titleKey) ? 
+                                            $fee->feeItemInfo->titleKey : null,
+                                       );
+                }
             }
+           
+            return $fineList;
         } catch (SoapFault $e) {
+            echo $e->getMessage();
             return new PEAR_Error($e->getMessage());
         } catch(Exception $e) {
             return new PEAR_Error($e->getMessage());
@@ -845,7 +849,7 @@ class SymphonyWS implements DriverInterface
                                 'barcode' => $transaction->itemID,
                                 'renew' => $transaction->renewals,
                                 'request' => $transaction->recallNoticesSent,
-                                'volume' => $transaction->copyNumber,
+                                //'volume' => $transaction->copyNumber,
                                 //'publication_year' => ,
                                 'renewable' => $renewable,
                                 //'message' => ,
@@ -991,16 +995,23 @@ class SymphonyWS implements DriverInterface
      * PEAR_Error object if there is a problem)
      * @access public
      */
-    public function findReserves($course, $inst, $dept)
+    public function findReserves($course = null, $inst = null, $dept = null)
     {
         if ($course) {
-            $params = array(//'userID' => '11',
-                            "browseType" => "COURSE_ID",
-                            'courseID' => $course);
+            $params = array(
+                'browseType' => 'COURSE_ID',
+                'browseValue' => $course,
+                'courseID' => $course);
         } elseif ($inst) {
             $params = array(
+                'browseType' => "USER_NAME",
+                'browseValue' => $int,
                 'userID' => $inst,
-                'courseID' => ""
+                //'browseDirection' => 'FORWARD',
+                'courseID' => 'RDG518',
+               // 'listID' => 'test',
+               // 'firstLineNumber' => 1,
+                //'lastEntryID' => ''
             );
         } elseif ($dept) {
             $params = array(
@@ -1012,16 +1023,15 @@ class SymphonyWS implements DriverInterface
                 'desk' => ''
             );
         }
+
         $items = array();
 
         try {
-            //$reserves = $this->reserveService->listReserve($params);
-            $reserveOptions = array("browseType" => "COURSE_NAME", 
-                                    "courseID" => "AAS300");
+            // $reserves = $this->reserveService->browseReserve($params);
+            //$reserves = $this->reserveService->listReservePaging($params);
+            $reserves = $this->reserveService->lookupReserve($params);
 
-            $reserves = $this->reserveService->listReserve($reserveOptions);
-
-            print_r($reserves);
+            //print_r($reserves);
 
             /*
             if ($bib_id && (empty($instructorId) || $instructorId == $instructor_id)
@@ -1029,18 +1039,20 @@ class SymphonyWS implements DriverInterface
                 && (empty($departmentId) || $departmentId == $dept_id)
             ) {
                 $items[] = array (
-                    'BIB_ID' => $bib_id,
-                    'INSTRUCTOR_ID' => $instructor_id,
-                    'COURSE_ID' => $course_id,
-                    'DEPARTMENT_ID' => $dept_id
+                    'BIB_ID' => $bib_id
                 );
             }
             */
+            return $items;
+        } catch (SoapFault $e) {
+            return new PEAR_Error('Could not find reserves: ' . 
+                $e->getMessage());
         } catch (Exception $e) {
-            echo $e;
+            return new PEAR_Error('Could not find reserves: ' . 
+                $e->getMessage());
         }
 
-        return $items;
+        
     }
 
     /**
@@ -1053,18 +1065,24 @@ class SymphonyWS implements DriverInterface
      */
     public function getInstructors()
     {
-        $reserveOptions = array("browseType" => "USER_NAME");
-        $reserves       = $this->reserveService->browseReserve($reserveOptions);
+        try {
+            $users = array();
 
-        $users = array();
+            $reserveOptions = array("browseType" => "USER_NAME");
+            $reserves       = $this->reserveService->browseReserve($reserveOptions);
 
-        foreach ($reserves->reserveInfo as $reserve) {
-            $users[$reserve->userID] = $reserve->userDisplayName;
+            
+            //print_r($reserves);
+            foreach ($reserves->reserveInfo as $reserve) {
+                $users[$reserve->userID] = $reserve->userDisplayName;
+            }
+
+            asort($users);
+
+            return $users;
+        } catch (SoapFault $e) {
+            return null;        
         }
-
-        asort($users);
-
-        return $users;
     }
 
     /**
@@ -1077,17 +1095,22 @@ class SymphonyWS implements DriverInterface
      */
     public function getCourses()
     {
-        $reserveOptions = array("browseType" => "COURSE_NAME");
-        $reserves       = $this->reserveService->browseReserve($reserveOptions);
+        try {
+            $courses = array();
 
-        $courses = array();
-        
-        foreach ($reserves->reserveInfo as $reserve) {
-            $courses[$reserve->courseID] = $reserve->courseID;
+            $reserveOptions = array("browseType" => "COURSE_NAME");
+            $reserves       = $this->reserveService->browseReserve($reserveOptions);
+            
+            foreach ($reserves->reserveInfo as $reserve) {
+                $courses[$reserve->courseID] = $reserve->courseID;
+            }
+            
+            asort($courses);
+
+            return $courses;
+        } catch (SoapFault $e) {
+            return null;
         }
-        
-        asort($courses);
-        return $courses;
     }
 
     /**
@@ -1098,19 +1121,24 @@ class SymphonyWS implements DriverInterface
      * @return array An associative array with key = dept. ID, value = dept. name.
      * @access public
      */
-    protected function getDepartments()
+    public function getDepartments()
     {
-        $reserveOptions = array("browseType" => "COURSE_NAME");
-        $reserves       = $this->reserveService->browseReserve($reserveOptions);
+        try {
+            $depts = array();
 
-        $depts = array();
+            $reserveOptions = array("browseType" => "COURSE_NAME");
+            $reserves       = $this->reserveService->browseReserve($reserveOptions);
 
-        foreach ($reserves->reserveInfo as $reserve) {
-            $depts[$reserve->courseName] = $reserve->courseName;
+            foreach ($reserves->reserveInfo as $reserve) {
+                $depts[$reserve->courseName] = $reserve->courseName;
+            }
+
+            asort($depts);
+            
+            return $depts;
+        } catch (SoapFault $e) {
+            return null;
         }
-
-        asort($depts);
-        return $depts;
     }
 }
 ?>
