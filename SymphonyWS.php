@@ -78,11 +78,12 @@ class SymphonyWS implements DriverInterface
 
         $host = $this->config['WebServices']['host'];
         $port = $this->config['WebServices']['port'];
+        $path = $this->config['WebServices']['path'];
 
         $this->clientID = $this->config['WebServices']['clientID'];
         $this->BASE_URL = ($this->config['WebServices']['https']) ? 
                         "https://" : "http://" 
-                        .$host.":".$port."/symws/";
+                        .$host.":".$port."/".$path."/";
 
         $this->sessionToken = isset($_SESSION['symws']['sessionToken']) ? 
             $_SESSION['symws']['sessionToken'] : '';
@@ -241,6 +242,7 @@ class SymphonyWS implements DriverInterface
                              "includeAvailabilityInfo" => "true",
                              "includeCallNumberSummary" => "true",
                              "includeItemInfo" => "true",
+                             "includeCatalogingInfo" => "true",
                              "includeOrderInfo" => "true",
                              "includeOPACInfo" => "true",
                              "includeBoundTogether" => "true",
@@ -287,7 +289,11 @@ class SymphonyWS implements DriverInterface
             }
             
             foreach ($holdings as $CallInfo) {
-                $items = $CallInfo->ItemInfo;
+                if (!property_exists($CallInfo, "ItemInfo")) {
+                    $items = array();
+                } else {
+                    $items = $CallInfo->ItemInfo;
+                }
 
                 if (!is_array($items)) {
                     $items = array($items);
@@ -369,7 +375,7 @@ class SymphonyWS implements DriverInterface
                                 'reserve' => $reserve,
                                 'callnumber' => $callnumber,
                                 'duedate' => $duedate,
-                                //'returnDate' => ,
+                                'returnDate' => false, // Not returned by symws
                                 'number' => $number,
                                 'requests_placed' => $requests_placed,
                                 'barcode' => $ItemInfo->itemID,
@@ -499,10 +505,17 @@ class SymphonyWS implements DriverInterface
 
             $login = $this->securityService->loginUser($options);
 
+            $this->sessionToken = $login->sessionToken;
+
             $headerbody = array("clientID" => $this->clientID,
-                                "sessionToken" => $login->sessionToken);
+                                "sessionToken" => $this->sessionToken);
 
             $header = new SoapHeader($this->WS_HEADER, "SdHeader", $headerbody);
+
+            $this->securityService = @new SoapClient($this->BASE_URL
+                .$this->SECURITY_WSDL, $options);
+
+            $this->securityService->__setSoapHeaders($header);
             
             $this->patronService = new SoapClient($this->BASE_URL.
                                     $this->PATRON_WSDL, 
@@ -664,6 +677,8 @@ class SymphonyWS implements DriverInterface
     public function getMyHolds($patron)
     {
         try {
+            $holdList = array();
+
             $options = array("includePatronHoldInfo" => "ACTIVE");
             $result  = $this->patronService->lookupMyAccountInfo($options);
             
@@ -753,7 +768,6 @@ class SymphonyWS implements DriverInterface
            
             return $fineList;
         } catch (SoapFault $e) {
-            echo $e->getMessage();
             return new PEAR_Error($e->getMessage());
         } catch(Exception $e) {
             return new PEAR_Error($e->getMessage());
@@ -774,17 +788,36 @@ class SymphonyWS implements DriverInterface
     public function getMyProfile($patron)
     {
         try {
+            $userProfileGroupField = 
+                $this->config['Behaviors']['userProfileGroupField'];
+
             $options = array("includePatronInfo"        => "ALL",
                              "includePatronAddressInfo" => "ACTIVE",
-                             "includePatronStatusInfo"  => "ALL");
+                             "includePatronStatusInfo"  => "ALL",
+                             "includeUserGroupInfo"     => "true");
         
             $result = $this->patronService->lookupMyAccountInfo($options);
 
-            $addressInfo = $result->patronAddressInfo->Address1Info;
+            $primaryAddress = $result->patronAddressInfo->primaryAddress;
+
+            $AddressInfo = "Address" . $primaryAddress . "Info";
+            $addressInfo = $result->patronAddressInfo->$AddressInfo;
             $address1    = $addressInfo[0]->addressValue;
             $address2    = $addressInfo[1]->addressValue;
             $zip         = $addressInfo[2]->addressValue;
             $phone       = $addressInfo[3]->addressValue;
+
+            if (strcmp($userProfileGroupField, "GROUP_ID") == 0) {
+                $group = $result->patronInfo->groupID;
+            } elseif (strcmp($userProfileGroupField, "USER_PROFILE_ID") == 0) {
+                $group = $this->securityService->lookupSessionInfo()->userProfileID;
+            } elseif (strcmp($userProfileGroupField, "PATRON_LIBRARY_ID") == 0) {
+                $group = $result->patronInfo->patronLibraryID;
+            } elseif (strcmp($userProfileGroupField, "DEPARTMENT") == 0) {
+                $group = $result->patronInfo->department;
+            } else {
+                $group = null;
+            }
 
             list($lastname,$firstname) = explode(', ', 
                                             $result->patronInfo->displayName);
@@ -795,7 +828,8 @@ class SymphonyWS implements DriverInterface
                              'address2'  => $address2,
                              'zip'       => $zip,
                              'phone'     => $phone,
-                             'group'     => $result->patronInfo->groupID);
+                             'group'     => $group
+                            );
 
             return $profile;
         } catch (Exception $e) {
@@ -818,6 +852,8 @@ class SymphonyWS implements DriverInterface
     public function getMyTransactions($patron)
     {
         try {
+            $transList = array();
+
             $options = array("includePatronCheckoutInfo" => "ALL");
 
             $result = $this->patronService->lookupMyAccountInfo($options);
@@ -890,14 +926,14 @@ class SymphonyWS implements DriverInterface
      */
     public function renewMyItems($renewDetails)
     {
-        $count = 0;
-        $items = array();
+        $blocks  = array();
+        $details = array();
 
         foreach ($renewDetails['details'] as $barcode) {
             try {
                 $options = array("itemID" => $barcode);
                 $renewal = $this->patronService->renewMyCheckout($options);
-                $count++;
+
                 $details[$barcode] = array('success' => true,
                                            'new_date' => date("j-M-y", 
                                               strtotime($renewal->dueDate)),
