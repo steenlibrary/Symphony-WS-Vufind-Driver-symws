@@ -145,7 +145,7 @@ class SymphonyWS implements DriverInterface
             $_SESSION['symws']['policies']['libraries'] = $libraryList;
             return $libraryList;
         } catch (SoapFault $e) {
-            return $e;
+            return new PEAR_Error($e->getMessage());
         } catch (Exception $e) {
             return new PEAR_Error($e->getMessage());
         }
@@ -261,6 +261,7 @@ class SymphonyWS implements DriverInterface
 
             $baseCallNumber = $result->TitleInfo->baseCallNumber;
 
+            // Check for Bound With
             if ($result->TitleInfo->numberOfBoundwithLinks > 0) {
                 $boundWidthHoldings = $result->TitleInfo->BoundwithLinkInfo;
                 
@@ -275,103 +276,99 @@ class SymphonyWS implements DriverInterface
                         $callNumberFilter = $CallInfo->callNumber;
                     }
                 }
+                
+                if ($parentID) {
+                    $options["titleID"] = $parentID;
+
+                    $result   = $this->standardService->lookupTitleInfo($options);
+                    $holdings = $result->TitleInfo->CallInfo;
+                }
             }
 
-            if ($parentID) {
-                $options["titleID"] = $parentID;
-
-                $result   = $this->standardService->lookupTitleInfo($options);
-                $holdings = $result->TitleInfo->CallInfo;
-            }
-            
-            if (!is_array($holdings)) {
-                $holdings = array($holdings);
-            }
+            // Process Holdings
+            $holdings = !is_array($holdings) ? array($holdings) : $holdings;
             
             foreach ($holdings as $CallInfo) {
-                if (!property_exists($CallInfo, "ItemInfo")) {
-                    $items = array();
-                } else {
-                    $items = $CallInfo->ItemInfo;
-                }
-
-                if (!is_array($items)) {
-                    $items = array($items);
-                }
-                
+                $items = !property_exists($CallInfo, "ItemInfo") ? 
+                    array() : $CallInfo->ItemInfo;
+                $items = !is_array($items) ? array($items) : $items;
+                // Process Items
                 foreach ($items as $ItemKey=>$ItemInfo) {
-                    $number = $ItemKey + 1;
-                    if ($ItemInfo != null && $ItemInfo->itemID != null) {
+                    $number     = $ItemKey + 1;
+                    $in_transit = isset($ItemInfo->transitReason);
+                    
+                    // Need to change this to check if user is blocked.
+                    $addLink = $is_holdable;
 
-                        if ($ItemInfo->chargeable != 1) {
-                            $availability = false;
-                            $addLink      = true;
-                            $status       = "Checked Out";
-                        } else {
-                            $availability = true;
-                            $addLink      = false;
-                            $status       = "Available";
+                    $available = !$in_transit && 
+                        ($ItemInfo->currentLocationID == $ItemInfo->homeLocationID 
+                        || $ItemInfo->chargeable);
+
+                    $status = $locations[$ItemInfo->currentLocationID];
+
+                    if (isset($ItemInfo->reshelvingLocationID)) {
+                        $locationID = $ItemInfo->reshelvingLocationID;
+                    } elseif ($available) {
+                        $locationID = $ItemInfo->currentLocationID;
+                    } else {
+                        $locationID = $ItemInfo->homeLocationID;
+                    }
+
+                    $duedate = isset($ItemInfo->dueDate) ? 
+                        date("F j, Y", strtotime($ItemInfo->dueDate)) : null;
+                        // recallDueDate
+                    $reserve = isset($ItemInfo->reserveCollectionID) ? "Y" : "N";
+                        
+                    if (!isset($callNumberFilter) ||
+                       ($CallInfo->callNumber == $callNumberFilter) || 
+                       ($parentID == $id)) {
+
+                        $showBaseCallNumber = 
+                            $this->config['Behaviors']['showBaseCallNumber'];
+
+                        $action = isset($_GET['action']) ? $_GET['action'] : 'Home';
+                        $action = preg_replace('/[^\w]/', '', $action);
+
+                        $callnumber = (($action == "JSON") && 
+                            ($showBaseCallNumber == true)) ? 
+                            $baseCallNumber : $CallInfo->callNumber;
+
+                        // Handle item notes
+                        $notes = array();
+
+                        if (isset($ItemInfo->publicNote)) {
+                            $notes[] = $ItemInfo->publicNote;
                         }
 
-                        $duedate = isset($ItemInfo->dueDate) ? 
-                            date("F j, Y", strtotime($ItemInfo->dueDate)) : null;
-                        // recallDueDate
-                        $reserve = isset($ItemInfo->reserveCollectionID) ? 
-                            "Y" : "N";
+                        if (isset($ItemInfo->staffNote) && 
+                            $this->config['Behaviors']['showStaffNotes']) {
+                            $notes[] = $ItemInfo->staffNote;
+                        }
+
+                        $requests_placed = isset($ItemInfo->numberOfHolds) ? 
+                            $ItemInfo->numberOfHolds : 0;
+
+                        $transitSourceLibraryID = 
+                            isset($ItemInfo->transitSourceLibraryID) ? 
+                            $ItemInfo->transitSourceLibraryID : null;
+
+                        $transitDestinationLibraryID = 
+                            isset($ItemInfo->transitDestinationLibraryID) ? 
+                            $ItemInfo->transitDestinationLibraryID : null;
                         
-                        if (!isset($callNumberFilter) ||
-                           ($CallInfo->callNumber == $callNumberFilter) || 
-                           ($parentID == $id)) {
-
-                            $showBaseCallNumber = 
-                                $this->config['Behaviors']['showBaseCallNumber'];
-
-                            $action = isset($_GET['action']) ? 
-                                $_GET['action'] : 'Home';
-                            $action = preg_replace('/[^\w]/', '', $action);
-
-                            $callnumber = (($action == "JSON") && 
-                                ($showBaseCallNumber == true)) ? 
-                                $baseCallNumber : $CallInfo->callNumber;
-
-                            // Handle item notes
-                            $notes = array();
-
-                            if (isset($ItemInfo->publicNote)) {
-                                $notes[] = $ItemInfo->publicNote;
-                            }
-
-                            if (isset($ItemInfo->staffNote) && 
-                                $this->config['Behaviors']['showStaffNotes']) {
-                                $notes[] = $ItemInfo->staffNote;
-                            }
-
-                            $requests_placed = isset($ItemInfo->numberOfHolds) ? 
-                                $ItemInfo->numberOfHolds : 0;
-
-                            $transitSourceLibraryID = 
-                                isset($ItemInfo->transitSourceLibraryID) ? 
-                                $ItemInfo->transitSourceLibraryID : null;
-
-                            $transitDestinationLibraryID = 
-                                isset($ItemInfo->transitDestinationLibraryID) ? 
-                                $ItemInfo->transitDestinationLibraryID : null;
+                        $transitReason = isset($ItemInfo->transitReason) ? 
+                            $ItemInfo->transitReason : null;
                         
-                            $transitReason = 
-                                isset($ItemInfo->transitReason) ? 
-                                $ItemInfo->transitReason : null;
-                        
-                            $transitDate = 
-                                isset($ItemInfo->transitDate) ? 
-                                $ItemInfo->transitDate : null;
+                        $transitDate = isset($ItemInfo->transitDate) ? 
+                            $ItemInfo->transitDate : null;
 
-                            // Add item to list of holdings
-                            $holdingList[] = array(
+                        // Add item to list of holdings
+                        $holdingList[] = array(
                                 'id' => $id,
-                                'availability' => $availability,
+                                'availability' => $available,
                                 'status' => $status,
                                 'location' =>
-                                    $locations[$ItemInfo->currentLocationID],
+                                    $locations[$locationID],
                                 'reserve' => $reserve,
                                 'callnumber' => $callnumber,
                                 'duedate' => $duedate,
@@ -384,7 +381,6 @@ class SymphonyWS implements DriverInterface
                                 'is_holdable' => $is_holdable,
                                 'holdtype' => 'hold',
                                 'addLink' => $addLink && $is_holdable,
-
                                 'item_id' => $ItemInfo->itemID,
 
                                 // The fields below are non-standard and 
@@ -400,8 +396,8 @@ class SymphonyWS implements DriverInterface
                                     $transitDestinationLibraryID,
                                 'transit_reason' => $transitReason,
                                 'transit_date' => $transitDate
-                            );
-                        }
+                        );
+                        
                     }
                 }
             }
@@ -859,10 +855,6 @@ class SymphonyWS implements DriverInterface
             $result = $this->patronService->lookupMyAccountInfo($options);
 
             $transactions = $result->patronCheckoutInfo;
-
-            if (empty($transactions)) {
-                return null;
-            }
 
             if (!is_array($transactions)) {
                 $transactions = array($transactions);
