@@ -91,7 +91,7 @@ class SymphonyWS implements DriverInterface
         try {
             $headerbody = array("clientID" => $this->clientID);     
 
-            $options = array("sessionToken" => $this->sessionToken, "trace" => "1");
+            $options = array("sessionToken" => $this->sessionToken);
   
             $header = new SoapHeader($this->WS_HEADER, "SdHeader", $headerbody);
  
@@ -106,7 +106,6 @@ class SymphonyWS implements DriverInterface
             $this->adminService = @new SoapClient($this->BASE_URL
                 .$this->ADMIN_WSDL, $options);
             $this->adminService->__setSoapHeaders($header);
-
         } catch (SoapFault $e) {
             throw $e;
         } catch (Exception $e) {
@@ -257,31 +256,34 @@ class SymphonyWS implements DriverInterface
 
             $is_holdable = $result->TitleInfo->TitleAvailabilityInfo->holdable;
             
+            if (!isset($result->TitleInfo->CallInfo)) {
+                return array();
+            }
+
             $holdings = $result->TitleInfo->CallInfo;
 
-            $baseCallNumber = $result->TitleInfo->baseCallNumber;
+            $baseCallNumber = isset($result->TitleInfo->baseCallNumber) ? 
+                $result->TitleInfo->baseCallNumber : null;
 
             // Check for Bound With
-            if ($result->TitleInfo->numberOfBoundwithLinks > 0) {
+            if (isset($titleInfo->BoundwithLinkInfo)) {
                 $boundWidthHoldings = $result->TitleInfo->BoundwithLinkInfo;
-                
-                if (!is_array($boundWidthHoldings)) {
-                    $boundWidthHoldings = array($boundWidthHoldings);
-                }
+                $boundWidthHoldings = !is_array($boundWidthHoldings) ? 
+                    array($boundWidthHoldings) : $boundWidthHoldings;
                 
                 foreach ($boundWidthHoldings as $CallInfo) {
                     if ($CallInfo->linkedAsParent) {
                         $parentID         = $CallInfo->linkedTitle->titleID;
                         $parentTitle      = $CallInfo->linkedTitle->title;
                         $callNumberFilter = $CallInfo->callNumber;
-                    }
-                }
-                
-                if ($parentID) {
-                    $options["titleID"] = $parentID;
 
-                    $result   = $this->standardService->lookupTitleInfo($options);
-                    $holdings = $result->TitleInfo->CallInfo;
+                        $options["titleID"] = $parentID;
+
+                        $result   = 
+                            $this->standardService->lookupTitleInfo($options);
+                        $holdings = $result->TitleInfo->CallInfo;
+                        break;
+                    }
                 }
             }
 
@@ -301,7 +303,8 @@ class SymphonyWS implements DriverInterface
                     $addLink = $is_holdable;
 
                     $available = !$in_transit && 
-                        ($ItemInfo->currentLocationID == $ItemInfo->homeLocationID 
+                        (strcmp($ItemInfo->currentLocationID, 
+                        $ItemInfo->homeLocationID) == 0
                         || $ItemInfo->chargeable);
 
                     $status = $locations[$ItemInfo->currentLocationID];
@@ -316,7 +319,10 @@ class SymphonyWS implements DriverInterface
 
                     $duedate = isset($ItemInfo->dueDate) ? 
                         date("F j, Y", strtotime($ItemInfo->dueDate)) : null;
-                        // recallDueDate
+                    $duedate = isset($ItemInfo->recallDueDate) ? 
+                        date("F j, Y", strtotime($ItemInfo->recallDueDate)) : 
+                        $duedate;
+
                     $reserve = isset($ItemInfo->reserveCollectionID) ? "Y" : "N";
                         
                     if (!isset($callNumberFilter) ||
@@ -330,7 +336,8 @@ class SymphonyWS implements DriverInterface
                         $action = preg_replace('/[^\w]/', '', $action);
 
                         $callnumber = (($action == "JSON") && 
-                            ($showBaseCallNumber == true)) ? 
+                            ($showBaseCallNumber == true) && 
+                            $baseCallNumber != null) ? 
                             $baseCallNumber : $CallInfo->callNumber;
 
                         // Handle item notes
@@ -397,10 +404,10 @@ class SymphonyWS implements DriverInterface
                                 'transit_reason' => $transitReason,
                                 'transit_date' => $transitDate
                         );
-                        
                     }
                 }
             }
+
             return $holdingList;
         } catch (Exception $e) {
             return new PEAR_Error($e->getMessage());
@@ -514,8 +521,7 @@ class SymphonyWS implements DriverInterface
             $this->securityService->__setSoapHeaders($header);
             
             $this->patronService = new SoapClient($this->BASE_URL.
-                                    $this->PATRON_WSDL, 
-                                    array("trace" => 1));
+                                    $this->PATRON_WSDL);
             
             $this->patronService->__setSoapHeaders($header);
 
@@ -523,8 +529,8 @@ class SymphonyWS implements DriverInterface
 
                 $_SESSION['symws']['sessionToken'] = $login->sessionToken;
 
-                $options = array("includePatronInfo" => "ALL",
-                                 "includePatronAddressInfo" => "ACTIVE");
+                $options = array("includePatronInfo" => "true",
+                                 "includePatronAddressInfo" => "true");
                 
                 $account = $this->patronService->lookupMyAccountInfo($options);
                 
@@ -683,10 +689,7 @@ class SymphonyWS implements DriverInterface
             }
             
             $holds = $result->patronHoldInfo;
-            
-            if (!is_array($holds)) {
-                $holds = array($holds);
-            }
+            $holds = !is_array($holds) ? array($holds) : $holds;
 
             foreach ($holds as $hold) {
                 $holdList[] = array('id' => $hold->titleKey,
@@ -740,9 +743,10 @@ class SymphonyWS implements DriverInterface
             $result = $this->patronService->lookupMyAccountInfo($options);
 
             if (isset($result->feeInfo)) {
-                $feeInfo = $result->feeInfo;
+                $fees = $result->feeInfo;
+                $fees = !is_array($fees) ? array($fees) : $fees;
 
-                foreach ($feeInfo as $fee) {
+                foreach ($fees as $fee) {
                     $fineList[] = array('amount' => $fee->amount->_ * 100,
                                         'checkout' => 
                                             isset($fee->feeItemInfo->checkoutDate) ? 
@@ -787,9 +791,9 @@ class SymphonyWS implements DriverInterface
             $userProfileGroupField = 
                 $this->config['Behaviors']['userProfileGroupField'];
 
-            $options = array("includePatronInfo"        => "ALL",
-                             "includePatronAddressInfo" => "ACTIVE",
-                             "includePatronStatusInfo"  => "ALL",
+            $options = array("includePatronInfo"        => "true",
+                             "includePatronAddressInfo" => "true",
+                             "includePatronStatusInfo"  => "true",
                              "includeUserGroupInfo"     => "true");
         
             $result = $this->patronService->lookupMyAccountInfo($options);
@@ -850,36 +854,36 @@ class SymphonyWS implements DriverInterface
         try {
             $transList = array();
 
-            $options = array("includePatronCheckoutInfo" => "ALL");
+            $options = array('includePatronCheckoutInfo' => 'ALL');
 
             $result = $this->patronService->lookupMyAccountInfo($options);
 
-            $transactions = $result->patronCheckoutInfo;
+            if (isset($result->patronCheckoutInfo)) {
+                $transactions = $result->patronCheckoutInfo;
+                $transactions = !is_array($transactions) ? array($transactions) : 
+                    $transactions;
 
-            if (!is_array($transactions)) {
-                $transactions = array($transactions);
-            }
+                foreach ($transactions as $transaction) {
+                    if ($transaction->unseenRenewalsRemaining > 0) {
+                        $renewable = true;
+                    } else {
+                        $renewable = false;
+                    }
 
-            foreach ($transactions as $transaction) {
-                if ($transaction->unseenRenewalsRemaining > 0) {
-                    $renewable = true;
-                } else {
-                    $renewable = false;
+                    $transList[] = array(
+                                    'duedate' => date("F j, Y",
+                                        strtotime($transaction->dueDate)),
+                                    'id' => $transaction->titleKey,
+                                    'barcode' => $transaction->itemID,
+                                    'renew' => $transaction->renewals,
+                                    'request' => $transaction->recallNoticesSent,
+                                    //'volume' => ,
+                                    //'publication_year' => ,
+                                    'renewable' => $renewable,
+                                    //'message' => ,
+                                    'title' => $transaction->title,
+                                    'item_id' => $transaction->itemID);
                 }
-
-                $transList[] = array(
-                                'duedate' => date("F j, Y",
-                                    strtotime($transaction->dueDate)),
-                                'id' => $transaction->titleKey,
-                                'barcode' => $transaction->itemID,
-                                'renew' => $transaction->renewals,
-                                'request' => $transaction->recallNoticesSent,
-                                //'volume' => $transaction->copyNumber,
-                                //'publication_year' => ,
-                                'renewable' => $renewable,
-                                //'message' => ,
-                                'title' => $transaction->title,
-                                'item_id' => $transaction->itemID);
             }
             return $transList;
         } catch (Exception $e) {
@@ -923,7 +927,7 @@ class SymphonyWS implements DriverInterface
 
         foreach ($renewDetails['details'] as $barcode) {
             try {
-                $options = array("itemID" => $barcode);
+                $options = array('itemID' => $barcode);
                 $renewal = $this->patronService->renewMyCheckout($options);
 
                 $details[$barcode] = array('success' => true,
@@ -1129,8 +1133,12 @@ class SymphonyWS implements DriverInterface
     public function getCourses()
     {
         try {
+            $headerbody = array("clientID" => $this->clientID);
+
+            $header = new SoapHeader($this->WS_HEADER, "SdHeader", $headerbody);
+
             $this->reserveService = @new SoapClient($this->BASE_URL
-                .$this->RESERVE_WSDL, $options);
+                .$this->RESERVE_WSDL);
             $this->reserveService->__setSoapHeaders($header);
 
             $courses = array();
