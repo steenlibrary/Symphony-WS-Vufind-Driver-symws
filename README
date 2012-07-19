@@ -2,6 +2,10 @@ Symphony WS Vufind Driver
 ------------------
 This driver was designed for Vufind 1.2 and above, although it should work with 1.1.  
 
+UPDATE (07/19/2012):
+	The driver repo has been moved to:
+	https://github.com/steenlibrary/Symphony-WS-Vufind-Driver-symws-SOAP
+
 UPDATE (06/20/2012): 
 	1. Supports new features in 1.4
 	2. getMyFines fixed to show individual fines instead of only fine total.
